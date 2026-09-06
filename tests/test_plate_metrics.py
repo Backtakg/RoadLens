@@ -17,4 +17,5 @@ def test_evaluate_exact_missed_and_cer():
     assert metrics["samples"] == 3
     assert metrics["exact_plate_accuracy"] == 1 / 3
     assert metrics["missed_read_rate"] == 1 / 3
-    assert metrics["character_error_rate"] == 2 / 33
+    # 1 substitution + 11 deletions over 33 ground-truth characters.
+    assert metrics["character_error_rate"] == 13 / 33
