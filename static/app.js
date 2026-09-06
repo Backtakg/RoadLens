@@ -11,7 +11,12 @@ async function refreshStatus() {
   try {
     const s = await fetch('/api/status').then(r => r.json());
     $('fps').textContent = Number(s.fps || 0).toFixed(1);
-    $('modelPill').textContent = s.model_loaded ? 'Model ready' : 'Model unavailable';
+    const b = s.ocr_backends || {};
+    const parts = [s.model_loaded ? 'YOLO ready' : 'Engine unavailable'];
+    if (b.paddleocr) parts.push('PaddleOCR');
+    if (b.tesseract) parts.push('Tesseract');
+    if (b.second_detector) parts.push('2nd detector');
+    $('modelPill').textContent = parts.join(' · ');
     $('modelPill').classList.toggle('bad', !s.model_loaded);
   } catch {}
 }
@@ -30,7 +35,10 @@ function escapeHtml(s) {
 $('start').onclick = async () => {
   const source = $('sourceValue').value.trim() || '0';
   const res = await fetch('/api/start', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source}) });
-  if (!res.ok) alert((await res.json()).error || 'Could not start stream');
+  if (!res.ok) {
+    alert((await res.json()).error || 'Could not start stream');
+    return;
+  }
   $('feed').src = '/video_feed?ts=' + Date.now();
   $('emptyState').style.display = 'none';
 };
