@@ -17,8 +17,6 @@ MODEL_REPO = os.getenv("PLATE_MODEL_REPO", "krishnamishra8848/Nepal-Vehicle-Lice
 MODEL_FILE = os.getenv("PLATE_MODEL_FILE", "last.pt")
 MODEL_PATH = os.getenv("PLATE_MODEL_PATH", "")
 CONF = float(os.getenv("PLATE_CONF", "0.28"))
-
-# Optional second detector. Set PLATE_MODEL_PATH_2 to another locally trained model.
 MODEL_PATH_2 = os.getenv("PLATE_MODEL_PATH_2", "")
 
 
@@ -36,12 +34,11 @@ class ANPREngine:
         self.paddle = None
         if PaddleOCR is not None and os.getenv("ROADLENS_PADDLE", "1") == "1":
             try:
-                self.paddle = PaddleOCR(lang="en", use_doc_orientation_classify=False,
+                # PP-OCR's Nepali/Devanagari model is specifically intended for Nepali text.
+                self.paddle = PaddleOCR(lang="ne", use_doc_orientation_classify=False,
                                         use_doc_unwarping=False, use_textline_orientation=False)
             except Exception:
                 self.paddle = None
-        self.track_history = defaultdict(lambda: deque_max())
-        self.temporal = defaultdict(list)
 
     def detect(self, frame):
         boxes = []
@@ -63,16 +60,14 @@ class ANPREngine:
     @staticmethod
     def _merge_boxes(boxes, iou_threshold=0.55):
         kept = []
-        boxes = sorted(boxes, key=lambda x: x[1], reverse=True)
-        for candidate in boxes:
+        for candidate in sorted(boxes, key=lambda x: x[1], reverse=True):
             if all(iou(candidate[0], old[0]) < iou_threshold for old in kept):
                 kept.append(candidate)
         return kept
 
     def recognize(self, crop):
-        variants = preprocess_variants(crop)
         candidates = []
-        for image in variants:
+        for image in preprocess_variants(crop):
             candidates.extend(tesseract_candidates(image))
             if self.paddle is not None:
                 candidates.extend(paddle_candidates(self.paddle, image))
@@ -80,20 +75,14 @@ class ANPREngine:
         candidates = [(t, s) for t, s in candidates if valid_candidate(t)]
         if not candidates:
             return "", 0.0, []
-        # Weighted voting: independent OCR engines and preprocessing variants vote together.
         score_by_text = defaultdict(float)
-        best_raw = defaultdict(list)
+        evidence = defaultdict(list)
         for text, score in candidates:
             score_by_text[text] += max(0.05, score)
-            best_raw[text].append(score)
+            evidence[text].append(score)
         text = max(score_by_text, key=score_by_text.get)
-        confidence = min(0.995, 0.35 + 0.08 * len(best_raw[text]) + 0.12 * max(best_raw[text]))
+        confidence = min(0.995, 0.35 + 0.08 * len(evidence[text]) + 0.12 * max(evidence[text]))
         return text, confidence, candidates
-
-
-def deque_max():
-    from collections import deque
-    return deque(maxlen=12)
 
 
 def iou(a, b):
@@ -124,20 +113,16 @@ def preprocess_variants(crop):
     if crop is None or crop.size == 0:
         return []
     h, w = crop.shape[:2]
-    # Perspective/rotation robustness: small rotations plus several illumination pipelines.
     scale = max(3.0, min(7.0, 1200.0 / max(1, w)))
     base = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-    variants = [base]
     gray = cv2.cvtColor(base, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
     den = cv2.fastNlMeansDenoising(clahe, None, 7, 7, 21)
     sharp = cv2.addWeighted(den, 1.7, cv2.GaussianBlur(den, (0, 0), 1.1), -0.7, 0)
-    variants += [cv2.cvtColor(clahe, cv2.COLOR_GRAY2BGR), cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)]
+    variants = [base, cv2.cvtColor(clahe, cv2.COLOR_GRAY2BGR), cv2.cvtColor(sharp, cv2.COLOR_GRAY2BGR)]
     for mode in (cv2.THRESH_BINARY, cv2.THRESH_BINARY_INV):
-        thr = cv2.adaptiveThreshold(sharp, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                     mode, 31, 5)
+        thr = cv2.adaptiveThreshold(sharp, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, mode, 31, 5)
         variants.append(cv2.cvtColor(thr, cv2.COLOR_GRAY2BGR))
-    # Gamma correction helps dark/night plates without pretending it fixes blur.
     for gamma in (0.65, 1.5):
         lut = np.array([((i / 255.0) ** gamma) * 255 for i in range(256)], dtype=np.uint8)
         variants.append(cv2.LUT(base, lut))
@@ -146,7 +131,7 @@ def preprocess_variants(crop):
 
 def tesseract_candidates(image):
     out = []
-    for lang in (os.getenv("OCR_LANG", "eng"), "eng"):
+    for lang in (os.getenv("OCR_LANG", "nep+eng"), "eng"):
         for psm in (6, 7, 8, 11, 13):
             try:
                 data = pytesseract.image_to_data(image, lang=lang, config=f"--oem 3 --psm {psm}", output_type=pytesseract.Output.DICT)
@@ -168,26 +153,20 @@ def paddle_candidates(paddle, image):
     try:
         results = paddle.predict(input=image)
         for result in results:
-            # PaddleOCR 3.x returns Result-like objects with a json representation.
-            payload = None
-            if hasattr(result, "json"):
-                payload = result.json
-                if callable(payload):
-                    payload = payload()
-            elif isinstance(result, dict):
-                payload = result
+            payload = result.json if hasattr(result, "json") else result
+            if callable(payload):
+                payload = payload()
             if isinstance(payload, str):
                 import json
                 payload = json.loads(payload)
             if not isinstance(payload, dict):
                 continue
-            for key in ("rec_texts", "text", "texts"):
-                values = payload.get(key)
-                if isinstance(values, list):
-                    scores = payload.get("rec_scores", payload.get("scores", []))
-                    for i, text in enumerate(values):
-                        score = float(scores[i]) if i < len(scores) else 0.5
-                        out.append((normalize_plate(text), score))
+            values = payload.get("rec_texts", payload.get("text", payload.get("texts", [])))
+            scores = payload.get("rec_scores", payload.get("scores", []))
+            if isinstance(values, list):
+                for i, text in enumerate(values):
+                    score = float(scores[i]) if i < len(scores) else 0.5
+                    out.append((normalize_plate(text), score))
     except Exception:
         pass
     return out
