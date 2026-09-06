@@ -4,9 +4,10 @@ services:
     ports:
       - "5000:5000"
     environment:
-      PLATE_CONF: "0.35"
+      PLATE_CONF: "0.28"
       PROCESS_EVERY_N: "2"
       OCR_LANG: "nep+eng"
+      ROADLENS_PADDLE: "1"
       ROADLENS_DB: "/data/roadlens.db"
     volumes:
       - roadlens_data:/data
