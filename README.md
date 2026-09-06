@@ -22,15 +22,13 @@ SQLite event + dashboard
 
 The application is intentionally **not dependent on one OCR engine or one detector**. PaddleOCR and the second detector are optional at Python level but are enabled by the Docker image. ByteTrack keeps the same vehicle/plate track across consecutive frames so RoadLens can vote over several observations instead of trusting one blurry frame.
 
-Ultralytics documents persistent tracking with `persist=True` and ByteTrack/BoT-SORT for continuous streams. citeturn3search0turn3search2
-
 ## Public Nepal data and training
 
-The main detector training source is the public **Nepali Private License Plates** dataset. It is CC BY 4.0 and contains 1,172 original photographs plus blur/contrast/exposure/noise variants for 5,860 image/label pairs across three Nepal plate types. citeturn1search0
+The main detector training source is the public **Nepali Private License Plates** dataset. It is CC BY 4.0 and contains 1,172 original photographs plus blur/contrast/exposure/noise variants for 5,860 image/label pairs across three Nepal plate types.
 
 RoadLens includes a training script that downloads that dataset and **splits by original-image family** so augmented copies do not leak between train/validation/test.
 
-There is also recent Nepali number-plate character research reporting a 34-character dataset with 26,537 labeled character samples and a YOLO + CNN recognition pipeline reaching up to 93% character recognition accuracy. citeturn4search0turn4academia18
+There is also recent Nepali number-plate character research reporting a 34-character dataset with 26,537 labeled character samples and a YOLO + CNN recognition pipeline reaching up to 93% character recognition accuracy.
 
 ### Train your Nepal detector for free
 
@@ -101,8 +99,6 @@ For the optional local PaddleOCR backend, install a compatible PaddlePaddle buil
 ```bash
 pip install -r requirements-accuracy.txt
 ```
-
-PaddlePaddle currently documents CPU installation for Python 3.9–3.13 and provides CPU/GPU packages; RoadLens uses the local CPU package in its Docker image, so no cloud OCR API is required. citeturn5search0turn5search5
 
 ## Environment variables
 
