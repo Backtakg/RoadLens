@@ -1,0 +1,6 @@
+# Optional local OCR backend. No paid API or cloud token is used.
+# Install a compatible PaddlePaddle CPU/GPU build first for your platform.
+paddleocr>=3.0
+
+# Training helpers
+pyyaml>=6.0
