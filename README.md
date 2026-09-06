@@ -2,72 +2,104 @@
 
 RoadLens is a **zero-paid-API-cost, self-hosted** Automatic Number Plate Recognition system for Nepal plates and authorized CCTV/RTSP feeds.
 
-## The upgraded pipeline
+## Accuracy-first architecture
 
 ```text
 Authorized CCTV / webcam
         ↓
 YOLO Nepal plate detector(s) + ByteTrack
         ↓
-plate crop + illumination/weather enhancement
+plate crop + illumination/weather preprocessing
         ↓
 Tesseract (Nepali + English) ─┐
-PaddleOCR (local PP-OCR) ─────┼→ weighted OCR ensemble
-optional second detector ─────┘
+PaddleOCR (PP-OCRv5, Nepali) ─┼→ OCR ensemble
+optional second detector ──────┘
         ↓
 Nepal-aware normalization + temporal consensus
         ↓
 SQLite event + dashboard
 ```
 
-The application is intentionally **not dependent on one OCR engine or one detector**. PaddleOCR and the second detector are optional at Python level but are enabled by the Docker image. ByteTrack keeps the same vehicle/plate track across consecutive frames so RoadLens can vote over several observations instead of trusting one blurry frame.
+RoadLens is deliberately **not dependent on one detector or one OCR engine**. Ultralytics documents ByteTrack as an available tracker for video streams, and PaddleOCR officially lists Nepali (`ne`) among its PP-OCRv5 supported languages. Those are implementation capabilities, not RoadLens accuracy guarantees.
 
 ## Public Nepal data and training
 
-The main detector training source is the public **Nepali Private License Plates** dataset. It is CC BY 4.0 and contains 1,172 original photographs plus blur/contrast/exposure/noise variants for 5,860 image/label pairs across three Nepal plate types.
+The main detector training source is the public **Nepali Private License Plates** dataset:
 
-RoadLens includes a training script that downloads that dataset and **splits by original-image family** so augmented copies do not leak between train/validation/test.
+https://huggingface.co/datasets/mukulboro/nepali-private-license-plates
 
-There is also recent Nepali number-plate character research reporting a 34-character dataset with 26,537 labeled character samples and a YOLO + CNN recognition pipeline reaching up to 93% character recognition accuracy.
+Its dataset card states 1,172 unique source photos and 5,860 image/label pairs, with original/blur/contrast/exposure/noise variants, under CC BY 4.0. RoadLens's training script groups the variants belonging to the same original photo before splitting train/validation/test to avoid augmentation leakage.
 
-### Train your Nepal detector for free
+### Train your Nepal detector
 
-Use a free GPU notebook such as Colab/Kaggle or your own computer:
+Use a free GPU notebook such as Colab/Kaggle or your own machine:
 
 ```bash
 pip install -r requirements.txt
 python training/train_nepal_detector.py --epochs 50 --device 0
 ```
 
-Then run the trained model:
+Then run the resulting weights:
 
 ```bash
 PLATE_MODEL_PATH=training/runs/nepal_plate_detector/weights/best.pt python app.py
 ```
 
-You can train a second detector and set:
+A second independently trained detector can be supplied with:
 
 ```bash
 PLATE_MODEL_PATH_2=/path/to/second/best.pt
 ```
 
-RoadLens ensembles overlapping detections from both models.
+RoadLens merges overlapping detections from the detector ensemble.
 
-## Why I am not claiming 100% accuracy
+## Existing external models
 
-No camera-based ANPR system can honestly guarantee perfect recognition in *all* weather. Rain droplets, fog, glare, night exposure, motion blur, compression, oblique plates and too few pixels on the plate can destroy information that no model can recover.
+RoadLens can also use this publicly available Nepal plate detector by default:
 
-Instead, RoadLens is designed to **measure and improve** accuracy:
+https://huggingface.co/krishnamishra8848/Nepal-Vehicle-License-Plate-Detection
 
-- detection precision/recall and mAP
+That model card reports P=0.973, R=0.956, mAP@50=0.988 and mAP@50-95=0.929 **for the publisher's own evaluation**. These numbers are not RoadLens measurements and are never presented as RoadLens accuracy.
+
+## No fabricated accuracy numbers
+
+**Current RoadLens deployment accuracy: not yet benchmarked.**
+
+The repository does not claim that RoadLens is 99%, 95%, or any other percentage accurate. A public model's score is not a substitute for testing RoadLens on held-out data from the intended cameras.
+
+The evaluation tools measure:
+
 - plate exact-match accuracy
 - character error rate
+- missed-read rate
+- detection precision/recall/mAP when detector labels are available
 - false reads per 1,000 vehicles
-- missed-plate rate
-- day/night/rain/fog breakdowns
+- day/night/rain/fog/glare breakdowns
 - track-level exact-match accuracy
 
-For final deployment, fine-tune using authorized footage from the exact cameras, then keep a completely unseen test set.
+See [`evaluation/README.md`](evaluation/README.md) and [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
+
+### Evaluation
+
+Create a labeled CSV containing real held-out predictions:
+
+```csv
+image_id,ground_truth,prediction
+```
+
+Then run:
+
+```bash
+python evaluation/plate_metrics.py results.csv --out evaluation/metrics.json
+```
+
+The repository's example rows, if any, are **format examples only**, not benchmark data.
+
+## Weather and difficult conditions
+
+RoadLens includes multiple local preprocessing variants: CLAHE, denoising, sharpening, adaptive thresholding and gamma variants, followed by multi-frame consensus. These techniques are intended to improve robustness; they do **not** prove all-weather accuracy.
+
+For real deployment, collect an authorized, labeled, held-out set from the exact cameras covering daylight, night, rain, fog, glare, motion blur, vehicle distance, perspective and plate types. Freeze the test set before tuning thresholds.
 
 ## Run with Docker
 
@@ -108,12 +140,12 @@ PLATE_MODEL_PATH_2=/path/to/other.pt  # optional ensemble detector
 PLATE_CONF=0.28
 PROCESS_EVERY_N=2
 ROADLENS_PADDLE=1
-OCR_LANG=eng
+OCR_LANG=nep+eng
 ```
 
 ## Accuracy-critical camera setup
 
-For a real deployment, model quality is only half the problem. Aim the camera so plates occupy enough pixels, minimize extreme perspective, use a fast shutter/appropriate IR at night, and avoid placing the camera where headlights directly saturate the sensor. A 4K camera poorly aimed at a distant road can be worse than a lower-resolution camera positioned correctly.
+Model quality is only half the problem. Aim the camera so plates occupy enough pixels, minimize extreme perspective, use an appropriate shutter/IR setup at night, and avoid direct headlight saturation. A high-resolution camera poorly aimed at a distant road can perform worse than a lower-resolution camera positioned correctly.
 
 ## Privacy / authorization
 
