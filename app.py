@@ -55,7 +55,8 @@ def record_consensus(plate, source, confidence, image, track_id=None):
     if winner != plate or count < CONSENSUS_VOTES:
         return
     scores = [c for t, p, c in history if p == winner and t >= cutoff]
-    score = min(0.995, sum(scores) / max(1, len(scores)) + 0.03 * min(3, count - 1))
+    # This is an uncalibrated model/OCR confidence aggregate, NOT an accuracy estimate.
+    score = sum(scores) / max(1, len(scores))
     event_key = (str(source), track_id, winner)
     last = state["last_seen"].get(event_key, 0)
     if now - last < EVENT_COOLDOWN:
@@ -82,13 +83,14 @@ def process_frame(frame):
                 continue
             crop = frame[y1:y2, x1:x2]
             plate, ocr_conf, _ = ENGINE.recognize(crop)
-            total = min(0.995, 0.55 * det_conf + 0.45 * ocr_conf) if plate else det_conf
-            label = f"{plate or 'PLATE'}  {total:.2f}"
+            # Keep this explicitly as a confidence signal; it is not calibrated accuracy.
+            total = (0.55 * det_conf + 0.45 * ocr_conf) if plate else det_conf
+            label = f"{plate or 'PLATE'}  conf {total:.2f}"
             if track_id is not None:
                 label += f"  #{track_id}"
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 220, 120), 2)
             cv2.rectangle(annotated, (x1, max(0, y1 - 32)),
-                           (x1 + min(520, 13 * len(label) + 24), y1), (0, 220, 120), -1)
+                           (x1 + min(560, 13 * len(label) + 24), y1), (0, 220, 120), -1)
             cv2.putText(annotated, label, (x1 + 8, y1 - 9),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
             if plate:
