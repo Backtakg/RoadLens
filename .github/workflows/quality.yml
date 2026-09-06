@@ -1,0 +1,20 @@
+name: RoadLens quality
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Compile Python
+        run: python -m compileall -q app.py roadlens_engine.py evaluation training
+      - name: Run evaluation-unit tests
+        run: pytest -q tests/test_plate_metrics.py
