@@ -1,6 +1,6 @@
 import os
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 
 import cv2
 import numpy as np
@@ -16,15 +16,14 @@ except Exception:
 MODEL_REPO = os.getenv("PLATE_MODEL_REPO", "krishnamishra8848/Nepal-Vehicle-License-Plate-Detection")
 MODEL_FILE = os.getenv("PLATE_MODEL_FILE", "last.pt")
 MODEL_PATH = os.getenv("PLATE_MODEL_PATH", "")
-CONF = float(os.getenv("PLATE_CONF", "0.28"))
 MODEL_PATH_2 = os.getenv("PLATE_MODEL_PATH_2", "")
+CONF = float(os.getenv("PLATE_CONF", "0.28"))
 
 
 def load_detector(path=None):
     if path:
         return YOLO(path)
-    model_path = MODEL_PATH or hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE)
-    return YOLO(model_path)
+    return YOLO(MODEL_PATH or hf_hub_download(repo_id=MODEL_REPO, filename=MODEL_FILE))
 
 
 class ANPREngine:
@@ -34,7 +33,6 @@ class ANPREngine:
         self.paddle = None
         if PaddleOCR is not None and os.getenv("ROADLENS_PADDLE", "1") == "1":
             try:
-                # PP-OCR's Nepali/Devanagari model is specifically intended for Nepali text.
                 self.paddle = PaddleOCR(lang="ne", use_doc_orientation_classify=False,
                                         use_doc_unwarping=False, use_textline_orientation=False)
             except Exception:
@@ -55,6 +53,11 @@ class ANPREngine:
             ids = result.boxes.id.int().cpu().tolist() if result.boxes.is_track else [None] * len(result.boxes)
             for b, c, tid in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy(), ids):
                 boxes.append((b.astype(int), float(c), tid))
+
+        # A classical OpenCV proposal stage is only a fallback when learned detectors miss.
+        if not boxes:
+            for b, score in classical_plate_candidates(frame):
+                boxes.append((b, score, None))
         return self._merge_boxes(boxes)
 
     @staticmethod
@@ -63,7 +66,7 @@ class ANPREngine:
         for candidate in sorted(boxes, key=lambda x: x[1], reverse=True):
             if all(iou(candidate[0], old[0]) < iou_threshold for old in kept):
                 kept.append(candidate)
-        return kept
+        return kept[:30]
 
     def recognize(self, crop):
         candidates = []
@@ -71,8 +74,7 @@ class ANPREngine:
             candidates.extend(tesseract_candidates(image))
             if self.paddle is not None:
                 candidates.extend(paddle_candidates(self.paddle, image))
-        candidates = [(normalize_plate(t), float(s)) for t, s in candidates]
-        candidates = [(t, s) for t, s in candidates if valid_candidate(t)]
+        candidates = [(normalize_plate(t), float(s)) for t, s in candidates if valid_candidate(normalize_plate(t))]
         if not candidates:
             return "", 0.0, []
         score_by_text = defaultdict(float)
@@ -83,6 +85,31 @@ class ANPREngine:
         text = max(score_by_text, key=score_by_text.get)
         confidence = min(0.995, 0.35 + 0.08 * len(evidence[text]) + 0.12 * max(evidence[text]))
         return text, confidence, candidates
+
+
+def classical_plate_candidates(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+    edges = cv2.Canny(gray, 80, 180)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (17, 5))
+    edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    h, w = frame.shape[:2]
+    proposals = []
+    for c in contours:
+        x, y, cw, ch = cv2.boundingRect(c)
+        area = cw * ch
+        if area < 0.0002 * w * h or area > 0.12 * w * h:
+            continue
+        ratio = cw / max(1, ch)
+        if not 1.8 <= ratio <= 7.5:
+            continue
+        rectangularity = cv2.contourArea(c) / max(1, area)
+        if rectangularity < 0.35:
+            continue
+        score = min(0.55, 0.25 + 0.25 * rectangularity + 0.05 * min(2.0, ratio / 3.0))
+        proposals.append((np.array([x, y, x + cw, y + ch]), score))
+    return sorted(proposals, key=lambda z: z[1], reverse=True)[:10]
 
 
 def iou(a, b):
@@ -99,20 +126,17 @@ def iou(a, b):
 
 def normalize_plate(text):
     text = str(text or "").replace("|", "1").replace("I", "1").replace("O", "0")
-    text = re.sub(r"[^0-9A-Za-z\u0900-\u097F]", "", text).upper()
-    return text[:24]
+    return re.sub(r"[^0-9A-Za-z\u0900-\u097F]", "", text).upper()[:24]
 
 
 def valid_candidate(text):
-    if len(text) < 3 or len(text) > 16:
-        return False
-    return any(ch.isdigit() for ch in text) and any(ch.isalpha() or "\u0900" <= ch <= "\u097F" for ch in text)
+    return 3 <= len(text) <= 16 and any(ch.isdigit() for ch in text) and any(ch.isalpha() or "\u0900" <= ch <= "\u097F" for ch in text)
 
 
 def preprocess_variants(crop):
     if crop is None or crop.size == 0:
         return []
-    h, w = crop.shape[:2]
+    _, w = crop.shape[:2]
     scale = max(3.0, min(7.0, 1200.0 / max(1, w)))
     base = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(base, cv2.COLOR_BGR2GRAY)
