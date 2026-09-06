@@ -1,4 +1,4 @@
-# RoadLens evaluation protocol
+# RoadLens real-world evaluation
 
 RoadLens does not display a fabricated accuracy number. A metric appears only after it has been computed from labeled, held-out data.
 
@@ -15,23 +15,42 @@ frame_0003,BA998AA1122,
 
 The examples above are only the **format**; they are not benchmark data and must not be interpreted as RoadLens results.
 
-## Run
+## Required test conditions
+
+Keep separate labeled test subsets for:
+
+- daylight
+- night
+- rain
+- fog/haze
+- glare/headlights
+- motion blur
+
+If a condition has no labeled samples, report `not measured` rather than `0%` or an estimate.
+
+## Metrics
+
+Run:
 
 ```bash
 python evaluation/plate_metrics.py path/to/results.csv --out evaluation/metrics.json
 ```
 
-The script reports:
+Report:
 
 - `samples`
 - `exact_plate_accuracy`
 - `missed_read_rate`
 - `character_error_rate`
 
-For a deployment benchmark, keep the test set completely separate from training data. Report results separately for day/night/rain/fog/glare where the test set contains enough labeled samples. Do not combine those conditions into one number and call it "all-weather accuracy."
+For detector evaluation, also report precision, recall, mAP50 and mAP50-95 from the held-out detector test split. Detection metrics and OCR metrics must not be conflated.
 
-## Required production benchmark
+## Production benchmark protocol
 
-For each camera, collect an authorized and legally appropriate labeled set containing the real viewpoints and conditions that matter. Freeze the test set before tuning thresholds. Keep vehicle/plate identities separated between train and test where possible to reduce leakage. Record the camera, date range, lighting/weather condition, plate type, and number of readable/unreadable plates.
+For each authorized camera, record camera ID, resolution, frame rate, viewpoint, approximate plate distance, date/time range, lighting/weather condition, plate type and readable/unreadable count. Freeze the test set before tuning thresholds. Keep vehicle/plate identities separated between train and test where possible to reduce leakage.
 
 A model is not considered production-validated merely because its training loss decreases or because a public model reports high metrics on a different dataset.
+
+## Confidence warning
+
+A detector/OCR confidence score is **not an accuracy percentage**. RoadLens must never convert confidence into a claimed accuracy. The live application labels this value as `conf` and the database stores it only as an uncalibrated confidence signal.
