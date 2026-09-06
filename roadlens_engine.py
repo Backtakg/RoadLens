@@ -8,11 +8,6 @@ import pytesseract
 from huggingface_hub import hf_hub_download
 from ultralytics import YOLO
 
-try:
-    from paddleocr import PaddleOCR
-except Exception:
-    PaddleOCR = None
-
 MODEL_REPO = os.getenv("PLATE_MODEL_REPO", "krishnamishra8848/Nepal-Vehicle-License-Plate-Detection")
 MODEL_FILE = os.getenv("PLATE_MODEL_FILE", "last.pt")
 MODEL_PATH = os.getenv("PLATE_MODEL_PATH", "")
@@ -31,8 +26,11 @@ class ANPREngine:
         self.detector = load_detector()
         self.detector2 = load_detector(MODEL_PATH_2) if MODEL_PATH_2 else None
         self.paddle = None
-        if PaddleOCR is not None and os.getenv("ROADLENS_PADDLE", "1") == "1":
+        # PaddleOCR is deliberately lazy/opt-in because importing and initializing it
+        # can exceed small cloud-instance memory limits. Tesseract remains the base OCR.
+        if os.getenv("ROADLENS_PADDLE", "0") == "1":
             try:
+                from paddleocr import PaddleOCR
                 self.paddle = PaddleOCR(ocr_version="PP-OCRv5", lang="ne",
                                         use_doc_orientation_classify=False,
                                         use_doc_unwarping=False,
@@ -166,10 +164,8 @@ def tesseract_candidates(image):
                 for txt, conf in zip(data["text"], data["conf"]):
                     txt = normalize_plate(txt)
                     if txt:
-                        try:
-                            score = max(0.0, float(conf) / 100.0)
-                        except Exception:
-                            score = 0.25
+                        try: score = max(0.0, float(conf) / 100.0)
+                        except Exception: score = 0.25
                         out.append((txt, score))
             except Exception:
                 pass
@@ -182,13 +178,11 @@ def paddle_candidates(paddle, image):
         results = paddle.predict(input=image)
         for result in results:
             payload = result.json if hasattr(result, "json") else result
-            if callable(payload):
-                payload = payload()
+            if callable(payload): payload = payload()
             if isinstance(payload, str):
                 import json
                 payload = json.loads(payload)
-            if not isinstance(payload, dict):
-                continue
+            if not isinstance(payload, dict): continue
             values = payload.get("rec_texts", payload.get("text", payload.get("texts", [])))
             scores = payload.get("rec_scores", payload.get("scores", []))
             if isinstance(values, list):
