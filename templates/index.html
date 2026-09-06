@@ -10,9 +10,9 @@
   <header class="topbar">
     <div>
       <div class="brand">ROAD<span>LENS</span></div>
-      <div class="sub">Nepal-focused automatic number-plate recognition</div>
+      <div class="sub">Nepal-focused multi-engine automatic number-plate recognition</div>
     </div>
-    <div class="pill" id="modelPill">Checking model…</div>
+    <div class="pill" id="modelPill">Checking engine…</div>
   </header>
 
   <main class="grid">
@@ -20,16 +20,14 @@
       <div class="panel-head">
         <div>
           <h2>Live camera</h2>
-          <p>Use an authorized CCTV/RTSP feed or a local camera.</p>
+          <p>Authorized CCTV/RTSP, HTTP/MJPEG or local camera.</p>
         </div>
         <div class="stats"><b id="fps">0.0</b><small>FPS</small></div>
       </div>
-
       <div class="video-wrap">
         <img id="feed" src="" alt="RoadLens camera feed">
         <div class="empty" id="emptyState">No stream running</div>
       </div>
-
       <div class="controls">
         <label>Source
           <select id="sourceType">
@@ -44,12 +42,12 @@
         <button class="primary" id="start">Start</button>
         <button class="danger" id="stop">Stop</button>
       </div>
-      <div class="notice">For CCTV, enter a stream URL reachable from the computer running RoadLens. Do not use cameras you are not authorized to access.</div>
+      <div class="notice">CCTV must be reachable from the RoadLens computer and you must be authorized to process it.</div>
     </section>
 
     <section class="panel events-panel">
       <div class="panel-head">
-        <div><h2>Detected plates</h2><p>Events are stored locally in SQLite.</p></div>
+        <div><h2>Detected plates</h2><p>Only consensus detections are written to local SQLite.</p></div>
         <button id="refresh">Refresh</button>
       </div>
       <div class="table-wrap">
@@ -61,14 +59,17 @@
     </section>
 
     <section class="panel architecture">
-      <h2>RoadLens pipeline</h2>
+      <h2>Accuracy-first pipeline</h2>
       <div class="pipeline">
-        <span>Authorized CCTV</span><i>→</i><span>YOLO plate detector</span><i>→</i><span>Crop + enhancement</span><i>→</i><span>Tesseract OCR</span><i>→</i><span>Temporal consensus</span><i>→</i><span>SQLite</span>
+        <span>CCTV</span><i>→</i><span>YOLO ensemble</span><i>→</i><span>ByteTrack</span><i>→</i><span>Weather preprocessing</span><i>→</i><span>Tesseract + PaddleOCR</span><i>→</i><span>Temporal voting</span><i>→</i><span>SQLite</span>
       </div>
       <div class="checks">
-        <div><b>Weather resilience</b><span>CLAHE · denoise · adaptive threshold · sharpening · multi-frame voting</span></div>
-        <div><b>Zero paid API</b><span>Inference and storage run on your own machine.</span></div>
-        <div><b>Accuracy reality</b><span>Accuracy depends on camera angle, shutter speed, plate pixels, rain/fog/night exposure and training data. Validate before operational use.</span></div>
+        <div><b>Detector redundancy</b><span>Use a second locally trained detector with PLATE_MODEL_PATH_2 when available.</span></div>
+        <div><b>OCR redundancy</b><span>Independent Tesseract and local PaddleOCR candidates are combined instead of trusting one engine.</span></div>
+        <div><b>Weather resilience</b><span>CLAHE · denoise · sharpening · adaptive threshold · gamma variants · multi-frame consensus.</span></div>
+        <div><b>Training</b><span>Use training/train_nepal_detector.py to fine-tune on public Nepal plate data, then adapt to your authorized cameras.</span></div>
+        <div><b>Zero paid API</b><span>All inference and storage run locally. No cloud OCR key is required.</span></div>
+        <div><b>Accuracy reality</b><span>No system can recover information destroyed by blur, fog, glare or insufficient pixels. Benchmark on the exact deployment cameras.</span></div>
       </div>
     </section>
   </main>
