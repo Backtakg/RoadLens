@@ -24,7 +24,7 @@ ENGINE_ERROR = None
 try:
     ENGINE = ANPREngine()
 except Exception as exc:
-    ENGINE_ERROR = str(exc)
+    ENGINE_ERROR = f"ANPR engine failed to initialize: {type(exc).__name__}: {exc}"
 
 
 def db():
@@ -55,7 +55,6 @@ def record_consensus(plate, source, confidence, image, track_id=None):
     if winner != plate or count < CONSENSUS_VOTES:
         return
     scores = [c for t, p, c in history if p == winner and t >= cutoff]
-    # This is an uncalibrated model/OCR confidence aggregate, NOT an accuracy estimate.
     score = sum(scores) / max(1, len(scores))
     event_key = (str(source), track_id, winner)
     last = state["last_seen"].get(event_key, 0)
@@ -65,13 +64,14 @@ def record_consensus(plate, source, confidence, image, track_id=None):
     con = db()
     con.execute("INSERT INTO events(ts,plate,confidence,source,track_id,image) VALUES(?,?,?,?,?,?)",
                 (datetime.now(timezone.utc).isoformat(), winner, score, str(source), track_id, image))
-    con.commit(); con.close()
+    con.commit()
+    con.close()
 
 
 def process_frame(frame):
     annotated = frame.copy()
     if ENGINE is None:
-        cv2.putText(annotated, "ENGINE ERROR - see /api/status", (20, 40),
+        cv2.putText(annotated, "ANPR ENGINE UNAVAILABLE", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         return annotated
     try:
@@ -83,7 +83,6 @@ def process_frame(frame):
                 continue
             crop = frame[y1:y2, x1:x2]
             plate, ocr_conf, _ = ENGINE.recognize(crop)
-            # Keep this explicitly as a confidence signal; it is not calibrated accuracy.
             total = (0.55 * det_conf + 0.45 * ocr_conf) if plate else det_conf
             label = f"{plate or 'PLATE'}  conf {total:.2f}"
             if track_id is not None:
@@ -97,45 +96,73 @@ def process_frame(frame):
                 ok, jpg = cv2.imencode(".jpg", crop, [int(cv2.IMWRITE_JPEG_QUALITY), 86])
                 record_consensus(plate, state["source"], total, jpg.tobytes() if ok else None, track_id)
     except Exception as exc:
-        state["last_error"] = str(exc)
+        state["last_error"] = f"Frame processing failed: {type(exc).__name__}: {exc}"
     return annotated
 
 
 def open_source(source):
     s = str(source or "0").strip()
-    return cv2.VideoCapture(int(s)) if s.isdigit() else cv2.VideoCapture(s, cv2.CAP_FFMPEG)
+    if s.isdigit():
+        return cv2.VideoCapture(int(s))
+    if not (s.startswith(("rtsp://", "rtsps://", "http://", "https://"))):
+        raise ValueError("Source must be a webcam index or an RTSP/RTSPS/HTTP(S) URL")
+    return cv2.VideoCapture(s, cv2.CAP_FFMPEG)
 
 
 def capture_loop():
-    cap = open_source(state["source"])
+    try:
+        cap = open_source(state["source"])
+    except Exception as exc:
+        state["last_error"] = str(exc)
+        state["running"] = False
+        return
     with state["lock"]:
         state["cap"] = cap
     if cap is None or not cap.isOpened():
-        state["last_error"] = "Could not open source. Use a local camera or an authorized RTSP/HTTP stream reachable from this machine."
+        state["last_error"] = "Could not open source. Verify the camera is reachable and the credentials/URL are correct."
         state["running"] = False
+        if cap is not None:
+            cap.release()
         return
     prev, processed = time.time(), 0
-    while state["running"]:
-        ok, frame = cap.read()
-        if not ok:
-            time.sleep(0.15); continue
-        state["frames"] += 1; processed += 1
-        annotated = process_frame(frame) if processed % PROCESS_EVERY_N == 0 else frame
-        ok, jpg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
-        if ok:
-            with state["lock"]:
-                state["latest_jpeg"] = jpg.tobytes()
-        now = time.time()
-        if now - prev >= 1.0:
-            state["fps"] = processed / (now - prev); processed, prev = 0, now
-    cap.release()
-    with state["lock"]:
-        state["cap"] = None
+    try:
+        while state["running"]:
+            ok, frame = cap.read()
+            if not ok:
+                state["last_error"] = "Camera read failed; stream may be offline or disconnected."
+                time.sleep(0.15)
+                continue
+            state["last_error"] = None
+            state["frames"] += 1
+            processed += 1
+            annotated = process_frame(frame) if processed % PROCESS_EVERY_N == 0 else frame
+            ok, jpg = cv2.imencode(".jpg", annotated, [int(cv2.IMWRITE_JPEG_QUALITY), 82])
+            if ok:
+                with state["lock"]:
+                    state["latest_jpeg"] = jpg.tobytes()
+            now = time.time()
+            if now - prev >= 1.0:
+                state["fps"] = processed / (now - prev)
+                processed, prev = 0, now
+    finally:
+        cap.release()
+        with state["lock"]:
+            state["cap"] = None
 
 
 @APP.get("/")
 def index():
     return render_template("index.html")
+
+
+@APP.get("/api/health")
+def health():
+    return jsonify({
+        "ok": ENGINE is not None,
+        "engine": "ready" if ENGINE is not None else "unavailable",
+        "error": ENGINE_ERROR,
+        "database": DB_PATH,
+    }), (200 if ENGINE is not None else 503)
 
 
 @APP.get("/api/status")
@@ -150,19 +177,22 @@ def status():
 
 @APP.post("/api/start")
 def start():
-    source = (request.json or {}).get("source", "0")
+    source = str((request.json or {}).get("source", "0")).strip()
     if not source:
         return jsonify({"error": "source is required"}), 400
+    if ENGINE is None:
+        return jsonify({"error": "ANPR engine is unavailable", "detail": ENGINE_ERROR}), 503
     if state["running"]:
         state["running"] = False
         if state["thread"]:
             state["thread"].join(timeout=2)
-    state.update({"source": source, "last_error": None, "frames": 0, "running": True,
-                  "started_at": datetime.now(timezone.utc).isoformat()})
-    state["tracks"].clear(); state["last_seen"].clear()
+    state.update({"source": source, "last_error": None, "frames": 0, "fps": 0.0, "running": True,
+                  "started_at": datetime.now(timezone.utc).isoformat(), "latest_jpeg": None})
+    state["tracks"].clear()
+    state["last_seen"].clear()
     state["thread"] = threading.Thread(target=capture_loop, daemon=True)
     state["thread"].start()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "source": source})
 
 
 @APP.post("/api/stop")
@@ -173,7 +203,10 @@ def stop():
 
 @APP.get("/api/events")
 def events():
-    limit = min(200, max(1, int(request.args.get("limit", 50))))
+    try:
+        limit = min(200, max(1, int(request.args.get("limit", 50))))
+    except ValueError:
+        return jsonify({"error": "limit must be an integer"}), 400
     con = db()
     rows = con.execute("SELECT id,ts,plate,confidence,source,track_id FROM events ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     con.close()
@@ -186,9 +219,13 @@ def video_feed():
         while True:
             with state["lock"]:
                 frame = state["latest_jpeg"]
+                running = state["running"]
             if frame:
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-            time.sleep(0.03)
+                yield b"--frame\r\nContent-Type: image/jpeg\r\nCache-Control: no-cache\r\n\r\n" + frame + b"\r\n"
+            elif not running:
+                time.sleep(0.15)
+            else:
+                time.sleep(0.03)
     return Response(gen(), mimetype="multipart/x-mixed-replace; boundary=frame")
 
 
