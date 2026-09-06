@@ -1,0 +1,16 @@
+services:
+  roadlens:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      PLATE_CONF: "0.35"
+      PROCESS_EVERY_N: "2"
+      OCR_LANG: "nep+eng"
+      ROADLENS_DB: "/data/roadlens.db"
+    volumes:
+      - roadlens_data:/data
+    restart: unless-stopped
+
+volumes:
+  roadlens_data:
