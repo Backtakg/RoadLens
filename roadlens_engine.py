@@ -33,8 +33,10 @@ class ANPREngine:
         self.paddle = None
         if PaddleOCR is not None and os.getenv("ROADLENS_PADDLE", "1") == "1":
             try:
-                self.paddle = PaddleOCR(lang="ne", use_doc_orientation_classify=False,
-                                        use_doc_unwarping=False, use_textline_orientation=False)
+                self.paddle = PaddleOCR(ocr_version="PP-OCRv5", lang="ne",
+                                        use_doc_orientation_classify=False,
+                                        use_doc_unwarping=False,
+                                        use_textline_orientation=False)
             except Exception:
                 self.paddle = None
 
@@ -53,8 +55,6 @@ class ANPREngine:
             ids = result.boxes.id.int().cpu().tolist() if result.boxes.is_track else [None] * len(result.boxes)
             for b, c, tid in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy(), ids):
                 boxes.append((b.astype(int), float(c), tid))
-
-        # A classical OpenCV proposal stage is only a fallback when learned detectors miss.
         if not boxes:
             for b, score in classical_plate_candidates(frame):
                 boxes.append((b, score, None))
@@ -74,17 +74,21 @@ class ANPREngine:
             candidates.extend(tesseract_candidates(image))
             if self.paddle is not None:
                 candidates.extend(paddle_candidates(self.paddle, image))
-        candidates = [(normalize_plate(t), float(s)) for t, s in candidates if valid_candidate(normalize_plate(t))]
-        if not candidates:
+        cleaned = []
+        for text, score in candidates:
+            text = normalize_plate(text)
+            if valid_candidate(text):
+                cleaned.append((text, float(score)))
+        if not cleaned:
             return "", 0.0, []
         score_by_text = defaultdict(float)
         evidence = defaultdict(list)
-        for text, score in candidates:
+        for text, score in cleaned:
             score_by_text[text] += max(0.05, score)
             evidence[text].append(score)
         text = max(score_by_text, key=score_by_text.get)
         confidence = min(0.995, 0.35 + 0.08 * len(evidence[text]) + 0.12 * max(evidence[text]))
-        return text, confidence, candidates
+        return text, confidence, cleaned
 
 
 def classical_plate_candidates(frame):
