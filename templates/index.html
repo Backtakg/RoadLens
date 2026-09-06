@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RoadLens — Nepal ANPR</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">ROAD<span>LENS</span></div>
+      <div class="sub">Nepal-focused automatic number-plate recognition</div>
+    </div>
+    <div class="pill" id="modelPill">Checking model…</div>
+  </header>
+
+  <main class="grid">
+    <section class="panel camera-panel">
+      <div class="panel-head">
+        <div>
+          <h2>Live camera</h2>
+          <p>Use an authorized CCTV/RTSP feed or a local camera.</p>
+        </div>
+        <div class="stats"><b id="fps">0.0</b><small>FPS</small></div>
+      </div>
+
+      <div class="video-wrap">
+        <img id="feed" src="" alt="RoadLens camera feed">
+        <div class="empty" id="emptyState">No stream running</div>
+      </div>
+
+      <div class="controls">
+        <label>Source
+          <select id="sourceType">
+            <option value="webcam">Local camera</option>
+            <option value="rtsp">RTSP / CCTV</option>
+            <option value="http">HTTP/MJPEG stream</option>
+          </select>
+        </label>
+        <label id="sourceValueWrap">Camera index
+          <input id="sourceValue" value="0" placeholder="0 or stream URL">
+        </label>
+        <button class="primary" id="start">Start</button>
+        <button class="danger" id="stop">Stop</button>
+      </div>
+      <div class="notice">For CCTV, enter a stream URL reachable from the computer running RoadLens. Do not use cameras you are not authorized to access.</div>
+    </section>
+
+    <section class="panel events-panel">
+      <div class="panel-head">
+        <div><h2>Detected plates</h2><p>Events are stored locally in SQLite.</p></div>
+        <button id="refresh">Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Plate</th><th>Confidence</th><th>Source</th></tr></thead>
+          <tbody id="events"><tr><td colspan="4" class="muted">No detections yet.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel architecture">
+      <h2>RoadLens pipeline</h2>
+      <div class="pipeline">
+        <span>Authorized CCTV</span><i>→</i><span>YOLO plate detector</span><i>→</i><span>Crop + enhancement</span><i>→</i><span>Tesseract OCR</span><i>→</i><span>Temporal consensus</span><i>→</i><span>SQLite</span>
+      </div>
+      <div class="checks">
+        <div><b>Weather resilience</b><span>CLAHE · denoise · adaptive threshold · sharpening · multi-frame voting</span></div>
+        <div><b>Zero paid API</b><span>Inference and storage run on your own machine.</span></div>
+        <div><b>Accuracy reality</b><span>Accuracy depends on camera angle, shutter speed, plate pixels, rain/fog/night exposure and training data. Validate before operational use.</span></div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
