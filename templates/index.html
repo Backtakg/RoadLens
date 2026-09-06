@@ -1,79 +1,15 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>RoadLens — Nepal ANPR</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <header class="topbar">
-    <div>
-      <div class="brand">ROAD<span>LENS</span></div>
-      <div class="sub">Nepal-focused multi-engine automatic number-plate recognition</div>
-    </div>
-    <div class="pill" id="modelPill">Checking engine…</div>
-  </header>
-
-  <main class="grid">
-    <section class="panel camera-panel">
-      <div class="panel-head">
-        <div>
-          <h2>Live camera</h2>
-          <p>Authorized CCTV/RTSP, HTTP/MJPEG or local camera.</p>
-        </div>
-        <div class="stats"><b id="fps">0.0</b><small>FPS</small></div>
-      </div>
-      <div class="video-wrap">
-        <img id="feed" src="" alt="RoadLens camera feed">
-        <div class="empty" id="emptyState">No stream running</div>
-      </div>
-      <div class="controls">
-        <label>Source
-          <select id="sourceType">
-            <option value="webcam">Local camera</option>
-            <option value="rtsp">RTSP / CCTV</option>
-            <option value="http">HTTP/MJPEG stream</option>
-          </select>
-        </label>
-        <label id="sourceValueWrap">Camera index
-          <input id="sourceValue" value="0" placeholder="0 or stream URL">
-        </label>
-        <button class="primary" id="start">Start</button>
-        <button class="danger" id="stop">Stop</button>
-      </div>
-      <div class="notice">CCTV must be reachable from the RoadLens computer and you must be authorized to process it.</div>
-    </section>
-
-    <section class="panel events-panel">
-      <div class="panel-head">
-        <div><h2>Detected plates</h2><p>Only consensus detections are written to local SQLite.</p></div>
-        <button id="refresh">Refresh</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Time</th><th>Plate</th><th>Read score*</th><th>Source</th></tr></thead>
-          <tbody id="events"><tr><td colspan="4" class="muted">No detections yet.</td></tr></tbody>
-        </table>
-      </div>
-      <p class="muted">*Read score is an ensemble heuristic, not a calibrated probability and not a measured accuracy percentage.</p>
-    </section>
-
-    <section class="panel architecture">
-      <h2>Accuracy-first pipeline</h2>
-      <div class="pipeline">
-        <span>CCTV</span><i>→</i><span>YOLO ensemble</span><i>→</i><span>ByteTrack</span><i>→</i><span>Weather preprocessing</span><i>→</i><span>Tesseract + PaddleOCR</span><i>→</i><span>Temporal voting</span><i>→</i><span>SQLite</span>
-      </div>
-      <div class="checks">
-        <div><b>Detector redundancy</b><span>Use a second locally trained detector with PLATE_MODEL_PATH_2 when available.</span></div>
-        <div><b>OCR redundancy</b><span>Independent Tesseract and local PaddleOCR candidates are combined instead of trusting one engine.</span></div>
-        <div><b>Weather resilience</b><span>CLAHE · denoise · sharpening · adaptive threshold · gamma variants · multi-frame consensus.</span></div>
-        <div><b>Training</b><span>Use training/train_nepal_detector.py to fine-tune on public Nepal plate data, then adapt to your authorized cameras.</span></div>
-        <div><b>Zero paid API</b><span>All inference and storage run locally. No cloud OCR key is required.</span></div>
-        <div><b>Accuracy reality</b><span>No system can recover information destroyed by blur, fog, glare or insufficient pixels. Benchmark on the exact deployment cameras.</span></div>
-      </div>
-    </section>
-  </main>
-  <script src="/static/app.js"></script>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RoadLens — Nepal ANPR</title>
+<style>
+:root{--bg:#050b12;--panel:#0b1520;--line:#1a2b3b;--text:#edf5fb;--muted:#7f93a6;--green:#32e0a1;--red:#ff6b75}*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 85% -10%,#12334a 0,transparent 60%),var(--bg);color:var(--text);font:14px Inter,system-ui,-apple-system,sans-serif}.shell{max-width:1440px;margin:auto;padding:22px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}.brand{display:flex;gap:12px;align-items:center}.mark{width:44px;height:44px;border-radius:13px;background:var(--green);color:#03140f;display:grid;place-items:center;font-weight:950}.brand h1{margin:0;font-size:22px}.brand p{margin:3px 0 0;color:var(--muted);font-size:12px}.live{padding:8px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);background:#09131d}.live i{display:inline-block;width:8px;height:8px;border-radius:50%;background:#637486;margin-right:7px}.live.on i{background:var(--green);box-shadow:0 0 12px var(--green)}.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px}.card{background:rgba(11,21,32,.94);border:1px solid var(--line);border-radius:16px;overflow:hidden}.camera{grid-row:span 2}.head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}.head h2{font-size:15px;margin:0}.head p{margin:4px 0 0;color:var(--muted);font-size:11px}.feed{aspect-ratio:16/9;background:#02060a;position:relative;display:grid;place-items:center}.feed img{width:100%;height:100%;object-fit:contain}.empty{color:#526678;text-align:center}.controls{padding:14px 18px;display:grid;grid-template-columns:1fr 2fr auto auto;gap:8px}.controls label{font-size:10px;color:var(--muted)}input,select,button{width:100%;margin-top:5px;padding:10px 11px;border-radius:9px;border:1px solid var(--line);background:#09131e;color:var(--text);font:inherit}.controls button{align-self:end;margin-top:15px}.primary{background:var(--green);border-color:var(--green);color:#03150f;font-weight:800}.danger{background:#261319;color:#ff9da4}.notice{padding:0 18px 15px;color:#627589;font-size:10px}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;padding:14px 18px}.stat{background:#08121c;border:1px solid var(--line);border-radius:10px;padding:12px}.stat small{display:block;color:var(--muted);font-size:10px}.stat b{display:block;font-size:19px;margin-top:4px}.table{max-height:390px;overflow:auto;padding:0 12px 12px}table{width:100%;border-collapse:collapse;font-size:11px}th{text-align:left;color:#61758a;padding:10px 6px}td{padding:11px 6px;border-top:1px solid #172634;color:#bdcad6}.plate{font:800 12px ui-monospace,monospace;letter-spacing:1px;color:#fff}.score{color:var(--green)}.architecture{padding-bottom:18px}.architecture .body{padding:0 18px}.pipeline{display:flex;flex-wrap:wrap;gap:7px;padding:16px 0}.pipeline span{padding:7px 9px;border:1px solid #213447;border-radius:8px;background:#091520;font-size:10px}.pipeline b{color:var(--green)}.truth{font-size:10px;color:#71859a;border-top:1px solid var(--line);padding-top:13px}.truth strong{color:#dce7ef}@media(max-width:900px){.grid{grid-template-columns:1fr}.camera{grid-row:auto}.controls{grid-template-columns:1fr 1fr}.stats{grid-template-columns:1fr 1fr}}@media(max-width:520px){.shell{padding:12px}.top{align-items:flex-start}.controls{grid-template-columns:1fr}.controls button{margin-top:4px}}
+</style></head><body><main class="shell">
+<header class="top"><div class="brand"><div class="mark">RL</div><div><h1>RoadLens</h1><p>Nepal-focused automatic number-plate recognition</p></div></div><div id="live" class="live"><i></i><span>Offline</span></div></header>
+<div class="grid"><section class="card camera"><div class="head"><div><h2>Live CCTV</h2><p>Authorized local camera / RTSP / HTTP-MJPEG</p></div><span id="fps">0.0 FPS</span></div><div class="feed"><img id="feed" alt="Live RoadLens feed" style="display:none"><div id="empty" class="empty">No camera stream running</div></div><div class="controls"><label>Input<select id="type"><option value="webcam">Local camera</option><option value="stream">CCTV / RTSP / HTTP</option></select></label><label id="sourceLabel">Camera index<input id="source" value="0" placeholder="0 or rtsp://..."></label><button class="primary" id="start">Start</button><button class="danger" id="stop">Stop</button></div><div class="notice">The CCTV source must be reachable from this RoadLens host and you must have authorization to process it.</div><div class="stats"><div class="stat"><small>Frames</small><b id="frames">0</b></div><div class="stat"><small>Detector</small><b id="detector">—</b></div><div class="stat"><small>OCR</small><b id="ocr">—</b></div></div></section>
+<section class="card"><div class="head"><div><h2>Recent detections</h2><p>Consensus reads stored locally</p></div><button id="refresh" style="width:auto;margin:0">Refresh</button></div><div class="table"><table><thead><tr><th>Time</th><th>Plate</th><th>Score*</th><th>Track</th></tr></thead><tbody id="events"><tr><td colspan="4" class="empty">No detections yet</td></tr></tbody></table></div></section>
+<section class="card architecture"><div class="head"><div><h2>RoadLens processing</h2><p>Redundant pipeline for difficult CCTV conditions</p></div></div><div class="body"><div class="pipeline"><span>CCTV</span><b>→</b><span>Detector ensemble</span><b>→</b><span>Tracking</span><b>→</b><span>Enhancement</span><b>→</b><span>OCR ensemble</span><b>→</b><span>Temporal consensus</span><b>→</b><span>SQLite</span></div><div class="truth"><strong>Accuracy policy:</strong> displayed score is not accuracy. RoadLens reports measured accuracy only from real labeled evaluation data. No invented benchmark values are shown.</div></div></section></div></main>
+<script>
+const $=id=>document.getElementById(id);function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('type').onchange=()=>{$('source').value=$('type').value==='webcam'?'0':'';$('source').placeholder=$('type').value==='webcam'?'0':'rtsp://user:password@camera/stream';$('sourceLabel').firstChild.textContent=$('type').value==='webcam'?'Camera index':'Stream URL'};
+async function refresh(){try{let s=await fetch('/api/status').then(r=>r.json()),e=await fetch('/api/events?limit=40').then(r=>r.json());$('fps').textContent=Number(s.fps||0).toFixed(1)+' FPS';$('frames').textContent=s.frames||0;$('detector').textContent=s.model_loaded?'Ready':'Unavailable';let b=s.ocr_backends||{};$('ocr').textContent=[b.paddleocr?'Paddle':'',b.tesseract?'Tesseract':''].filter(Boolean).join(' + ')||'Unavailable';$('live').className='live '+(s.running?'on':'');$('live').querySelector('span').textContent=s.running?'Live':'Offline';$('events').innerHTML=e.length?e.map(x=>`<tr><td>${new Date(x.ts).toLocaleTimeString()}</td><td class="plate">${esc(x.plate)}</td><td class="score">${Number(x.confidence).toFixed(2)}</td><td>${x.track_id??'—'}</td></tr>`).join(''):'<tr><td colspan="4" class="empty">No detections yet</td></tr>'}catch{}}
+$('start').onclick=async()=>{let source=$('source').value.trim()||'0',r=await fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source})});if(!r.ok){alert((await r.json()).error||'Unable to start source');return}$('feed').src='/video_feed?t='+Date.now();$('feed').style.display='block';$('empty').style.display='none';refresh()};$('stop').onclick=async()=>{await fetch('/api/stop',{method:'POST'});$('feed').src='';$('feed').style.display='none';$('empty').style.display='block';refresh()};$('refresh').onclick=refresh;setInterval(refresh,1500);refresh();
+</script></body></html>
