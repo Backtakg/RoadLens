@@ -9,13 +9,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Open-source local OCR ensemble. No API key and no paid service.
-RUN python -m pip install --no-cache-dir paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/ \
-    && pip install --no-cache-dir "paddleocr>=3.0"
-
+# Keep the Render web service within the 512 MiB class of instances.
+# PaddlePaddle/PaddleOCR is an optional heavy backend and is disabled on the
+# web deployment; Tesseract + the configured YOLO detector remain available.
 COPY . .
 
 ENV PORT=5000
-ENV ROADLENS_PADDLE=1
+ENV ROADLENS_PADDLE=0
+ENV PYTHONUNBUFFERED=1
+ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
 EXPOSE 5000
 CMD ["python", "app.py"]
